@@ -1,0 +1,637 @@
+const BigNumber = require('bignumber.js');
+
+const Mine = artifacts.require("Mine");
+
+const UsdtToken = artifacts.require('Usdt');
+
+const AmountCompContract = artifacts.require('AmountComp');
+
+const TOKEN_USDT = 'USDT';
+
+contract('DeferSwap', async accounts => {
+
+    it('emergencyWithdraw => fail => non owner', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.emergencyWithdraw(1222, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Ownable: caller is not the owner', e.reason);
+        }
+    });
+
+    it('emergencyWithdraw => fail => params error', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.emergencyWithdraw(0, { from: accounts[1] });
+        } catch (e) {
+            assert.equal('Mine: params error', e.reason);
+        }
+    });
+
+    it('emergencyWithdraw => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[2] });
+
+        let decimal = new BigNumber(10).pow(18);
+
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        await usdtInstance.transfer(mineInstance.address, new BigNumber(3000).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        // 提现1000usdt
+        await mineInstance.emergencyWithdraw(new BigNumber(1000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+
+        assert.equal(new BigNumber(1000).multipliedBy(decimal).toString(10), new BigNumber(await usdtInstance.balanceOf(accounts[1])).toString(10));
+        assert.equal(new BigNumber(2000).multipliedBy(decimal).toString(10), new BigNumber(await usdtInstance.balanceOf(mineInstance.address)).toString(10));
+
+        // 提现2000usdt
+        await mineInstance.emergencyWithdraw(new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+
+        assert.equal(new BigNumber(3000).multipliedBy(decimal).toString(10), new BigNumber(await usdtInstance.balanceOf(accounts[1])).toString(10));
+        assert.equal(0, new BigNumber(await usdtInstance.balanceOf(mineInstance.address)).toString(10));
+    });
+
+    it('setToken => fail => non owner', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.setToken(TOKEN_USDT, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Ownable: caller is not the owner', e.reason);
+        }
+    });
+
+    it('setToken => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+
+        assert.equal(true, await mineInstance.tokenWhitelist(TOKEN_USDT));
+
+        await mineInstance.setToken(TOKEN_USDT, false, { from: accounts[1] });
+
+        assert.equal(false, await mineInstance.tokenWhitelist(TOKEN_USDT));
+    });
+
+    it('setStartBlock => fail => non owner', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.setStartBlock(1, 20, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Ownable: caller is not the owner', e.reason);
+        }
+    });
+
+    it('setStartBlock => fail => end lt start', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.setStartBlock(20, 1, { from: accounts[1] });
+        } catch (e) {
+            assert.equal('Mine: params error', e.reason);
+        }
+    });
+
+    it('setStartBlock => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        await mineInstance.setStartBlock(20, 100, { from: accounts[1] });
+
+        assert.equal(20, await mineInstance.startBlock());
+        assert.equal(100, await mineInstance.endBlock());
+
+        await mineInstance.setStartBlock(300, 500, { from: accounts[1] });
+
+        assert.equal(300, await mineInstance.startBlock());
+        assert.equal(500, await mineInstance.endBlock());
+    });
+
+    it('setPerBlockDefer => fail => non owner', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.setPerBlockDefer(30, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Ownable: caller is not the owner', e.reason);
+        }
+    });
+
+    it('setPerBlockDefer => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        // 默认20
+        assert.equal(20, await mineInstance.perBlockDefer());
+
+        await mineInstance.setPerBlockDefer(30, { from: accounts[1] });
+
+        assert.equal(30, await mineInstance.perBlockDefer());
+    });
+
+    it('setWriteAddress => fail => non owner', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.setWriteAddress(accounts[3], { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Ownable: caller is not the owner', e.reason);
+        }
+    });
+
+    it('setWriteAddress => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[3], { from: accounts[1] });
+
+        assert.equal(accounts[3], await mineInstance.writeAddress());
+    });
+
+    it('setDeferToken => fail => non owner', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Ownable: caller is not the owner', e.reason);
+        }
+    });
+
+    it('setWithdrawLimit => fail => non owner', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.setWithdrawLimit(12, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Ownable: caller is not the owner', e.reason);
+        }
+    });
+
+    it('setWithdrawLimit => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        assert.equal(3600 * 24 * 30, new BigNumber(await mineInstance.withdrawLimit()).toString(10));
+
+        await mineInstance.setWithdrawLimit(12, { from: accounts[1] });
+
+        assert.equal(12, new BigNumber(await mineInstance.withdrawLimit()).toString(10));
+    });
+
+    it('notify => Permission denied', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.notify(TOKEN_USDT, 1000, accounts[2], { from: accounts[3] });
+        } catch (e) {
+            assert.equal('Mine: Permission denied', e.reason);
+        }
+    });
+
+    it('notify => params', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        try {
+            await mineInstance.notify(TOKEN_USDT, 0, accounts[2], { from: accounts[3] });
+        } catch (e) {
+            assert.equal('Mine: params error', e.reason);
+        }
+    });
+
+    it('notify => not in tokenWhitelist', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+
+        let amount = new BigNumber(1234).multipliedBy(new BigNumber(10).pow(18)).toString(10);
+
+        await mineInstance.notify(TOKEN_USDT, amount, accounts[3], { from: accounts[2] });
+
+        assert.equal(0, await mineInstance.addressVolume(accounts[3]));
+    });
+
+    it('notify => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+
+        let amountCompInstance = await AmountCompContract.new({ from: accounts[1] });
+        await amountCompInstance.setStableToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setAmountCompContract(amountCompInstance.address, { from: accounts[1] });
+
+        let decimal = new BigNumber(10).pow(18);
+        let amount = new BigNumber(1234).multipliedBy(decimal);
+
+        await mineInstance.notify(TOKEN_USDT, amount.toString(10), accounts[3], { from: accounts[2] });
+
+        // 成交量记录
+        assert.equal(amount.toString(10), new BigNumber(await mineInstance.addressVolume(accounts[3])).toString(10));
+
+        // 打分
+        let score = new BigNumber(await mineInstance.addressScore(accounts[3]));
+        assert.equal(35, score.toString(10));
+    });
+
+    it('deposit => fail => params error', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        try {
+            await mineInstance.deposit(0, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Mine: params error', e.reason);
+        }
+    });
+
+    it('deposit => fail => insufficient balance', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        try {
+            await mineInstance.deposit(1234, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('ERC20: transfer amount exceeds balance', e.reason);
+        }
+    });
+
+    it('deposit => fail => not approve', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        await usdtInstance.transfer(accounts[2], new BigNumber(5000).multipliedBy(new BigNumber(10).pow(18)).toString(10), { from: accounts[1] });
+
+        try {
+            await mineInstance.deposit(1234, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('ERC20: transfer amount exceeds allowance', e.reason);
+        }
+    });
+
+    it('deposit => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        let decimal = new BigNumber(10).pow(18);
+
+        await usdtInstance.transfer(accounts[2], new BigNumber(5000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(5000).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        await mineInstance.deposit(new BigNumber(1000).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        // 用户抵押
+        assert.equal(new BigNumber(1000).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.addressDeposit(accounts[2])).toString(10));
+        // 抵押总额
+        assert.equal(new BigNumber(1000).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.depositTotal()).toString(10));
+
+        // 因为没有成交量，所以分数依旧为0
+        assert.equal(0, await mineInstance.addressScore(accounts[2]));
+        assert.equal(0, await mineInstance.scoreTotal());
+
+        // 继续抵押
+        await usdtInstance.transfer(accounts[4], new BigNumber(5000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(5000).multipliedBy(decimal).toString(10), { from: accounts[4] });
+
+        await mineInstance.deposit(new BigNumber(3333).multipliedBy(decimal).toString(10), { from: accounts[4] });
+
+        // 用户抵押
+        assert.equal(new BigNumber(3333).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.addressDeposit(accounts[4])).toString(10));
+        // 抵押总额 3333+1000
+        assert.equal(new BigNumber(4333).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.depositTotal()).toString(10));
+    });
+
+    it('deposit => success + volume => score', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[3], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        let amountCompInstance = await AmountCompContract.new({ from: accounts[1] });
+        await amountCompInstance.setStableToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setAmountCompContract(amountCompInstance.address, { from: accounts[1] });
+
+        let decimal = new BigNumber(10).pow(18);
+        let depositAmount = new BigNumber(5000).multipliedBy(decimal);
+
+        await usdtInstance.transfer(accounts[2], depositAmount.toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, depositAmount.toString(10), { from: accounts[2] });
+
+        // --------- A[2] ----------
+        // 抵押量 => 1000
+        await mineInstance.deposit(new BigNumber(1000).multipliedBy(decimal).toString(10), { from: accounts[2] });
+        // 成交量 => 3000
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(3000).multipliedBy(decimal).toString(10), accounts[2], { from: accounts[3] });
+
+        assert.equal(1674, new BigNumber(await mineInstance.addressScore(accounts[2])).toString(10));
+        assert.equal(1674, new BigNumber(await mineInstance.scoreTotal()).toString(10));
+
+        // 再增加5000的成交量
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(5000).multipliedBy(decimal).toString(10), accounts[2], { from: accounts[3] });
+
+        assert.equal(2759, new BigNumber(await mineInstance.addressScore(accounts[2])).toString(10));
+        assert.equal(2759, new BigNumber(await mineInstance.scoreTotal()).toString(10));
+
+        // --------- A[5] ----------
+        // 换个人抵押和成交
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(10000).multipliedBy(decimal).toString(10), accounts[5], { from: accounts[3] });
+
+        assert.equal(100, new BigNumber(await mineInstance.addressScore(accounts[5])).toString(10));
+        assert.equal(2859, new BigNumber(await mineInstance.scoreTotal()).toString(10));
+
+
+        // --------- A[6] ----------
+        // 继续换个人抵押和成交
+        await usdtInstance.transfer(accounts[6], new BigNumber(50000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(50000).multipliedBy(decimal).toString(10), { from: accounts[6] });
+
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(20000).multipliedBy(decimal).toString(10), accounts[6], { from: accounts[3] });
+        await mineInstance.deposit(new BigNumber(10000).multipliedBy(decimal).toString(10), { from: accounts[6] });
+
+        assert.equal(14100, new BigNumber(await mineInstance.addressScore(accounts[6])).toString(10));
+        assert.equal(16959, new BigNumber(await mineInstance.scoreTotal()).toString(10));
+
+        // --------- A[2] ----------
+        assert.equal(2759, new BigNumber(await mineInstance.addressScore(accounts[2])).toString(10));
+    });
+
+
+    it('withdraw => fail => params error', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        try {
+            await mineInstance.withdraw(0, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Mine: params error', e.reason);
+        }
+    });
+
+    it('withdraw => fail => Mine: withdraw lock', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        await usdtInstance.transfer(accounts[2], new BigNumber(2000).multipliedBy(new BigNumber(10).pow(18)).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(2000).multipliedBy(new BigNumber(10).pow(18)).toString(10), { from: accounts[2] });
+
+        // 质押100个usdt
+        await mineInstance.deposit(new BigNumber(100).multipliedBy(new BigNumber(10).pow(18)).toString(10), { from: accounts[2] });
+
+        try {
+            await mineInstance.withdraw(1, { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Mine: withdraw lock', e.reason);
+        }
+    });
+
+    it('withdraw => fail => insufficient balance', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        let decimal = new BigNumber(10).pow(18);
+
+        await usdtInstance.transfer(accounts[2], new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        // 质押100个usdt
+        await mineInstance.deposit(new BigNumber(100).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        // 取消提现限制
+        await mineInstance.setWithdrawLimit(0, { from: accounts[1] });
+
+        try {
+            await mineInstance.withdraw(new BigNumber(200).multipliedBy(decimal).toString(10), { from: accounts[2] });
+        } catch (e) {
+            assert.equal('Mine: insufficient balance', e.reason);
+        }
+    });
+
+    it('withdraw => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[2], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        let decimal = new BigNumber(10).pow(18);
+
+        await usdtInstance.transfer(accounts[2], new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        // 取消提现限制
+        await mineInstance.setWithdrawLimit(0, { from: accounts[1] });
+
+        // -------- A[2] ---------
+        // 质押100个usdt
+        await mineInstance.deposit(new BigNumber(100).multipliedBy(decimal).toString(10), { from: accounts[2] });
+        // 提现12
+        await mineInstance.withdraw(new BigNumber(12).multipliedBy(decimal).toString(10), { from: accounts[2] });
+        // 个人质押总额变为了 88
+        assert.equal(new BigNumber(88).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.addressDeposit(accounts[2])).toString(10));
+        // 合约的质押总额有变为了 88 [因为只有一个用户质押]
+        assert.equal(new BigNumber(88).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.depositTotal()).toString(10));
+        // 余额由质押后的1900 => 1912
+        assert.equal(new BigNumber(1912).multipliedBy(decimal).toString(10), new BigNumber(await usdtInstance.balanceOf(accounts[2])).toString(10));
+        // 继续质押 200 usdt
+        await mineInstance.deposit(new BigNumber(200).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        // -------- A[3] ---------
+        await usdtInstance.transfer(accounts[3], new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[3] });
+        // 质押 1000
+        await mineInstance.deposit(new BigNumber(1000).multipliedBy(decimal).toString(10), { from: accounts[3] });
+        // 个人质押总额变为了 1000
+        assert.equal(new BigNumber(1000).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.addressDeposit(accounts[3])).toString(10));
+        // 合约的质押总额有变为了 1000 + 88 + 200 = 1288
+        assert.equal(new BigNumber(1288).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.depositTotal()).toString(10));
+
+        // -------- A[2] ---------
+        assert.equal(new BigNumber(288).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.addressDeposit(accounts[2])).toString(10));
+
+        // -------- A[3] ---------
+        // 提现1000
+        await mineInstance.withdraw(new BigNumber(1000).multipliedBy(decimal).toString(10), { from: accounts[3] });
+        // 个人质押变为0
+        assert.equal(0, new BigNumber(await mineInstance.addressDeposit(accounts[3])).toString(10));
+        // 质押总额变为288
+        assert.equal(new BigNumber(288).multipliedBy(decimal).toString(10), new BigNumber(await mineInstance.depositTotal()).toString(10));
+    });
+
+    it('withdraw => success => claim', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[1], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        let amountCompInstance = await AmountCompContract.new({ from: accounts[1] });
+        await amountCompInstance.setStableToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setAmountCompContract(amountCompInstance.address, { from: accounts[1] });
+
+        let decimal = new BigNumber(10).pow(18);
+
+        // 转合约 - 10000
+        await usdtInstance.transfer(mineInstance.address, new BigNumber(10000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+
+        // 转A2 - 2000
+        await usdtInstance.transfer(accounts[2], new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        // 取消提现限制
+        let r = await mineInstance.setWithdrawLimit(0, { from: accounts[1] });
+        // 设置开始区块
+        await mineInstance.setStartBlock(r.receipt.blockNumber + 1, r.receipt.blockNumber + 100, { from: accounts[1] });
+
+        // -------- A[2] ---------
+        // 增加成交量
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(10000).multipliedBy(decimal).toString(10), accounts[2], { from: accounts[1] });
+        // 质押100个usdt
+        await mineInstance.deposit(new BigNumber(100).multipliedBy(decimal).toString(10), { from: accounts[2] });
+        // 提现12
+        await mineInstance.withdraw(new BigNumber(12).multipliedBy(decimal).toString(10), { from: accounts[2] });
+        // 到这里经历了3(含当前区块)个区块，每个区块释放20，也就是释放了 60 个
+        // 因为A2的成交量占据了100%，所以cliam的奖励全部归属A2
+        // 所以A2提现除了获得提现的额度，还需要加上奖励的 60 个
+        assert.equal(new BigNumber(1972).multipliedBy(decimal).toString(10), new BigNumber(await usdtInstance.balanceOf(accounts[2])).toString(10));
+        // A2的打分变为0，同时总分也扣除相应的分数
+        // 因为A2占据百分百，所以两个都为0
+        assert.equal(0, await mineInstance.addressScore(accounts[2]));
+        assert.equal(0, await mineInstance.scoreTotal());
+        // 资金池也全部发放
+        assert.equal(0, await mineInstance.deferTotal());
+
+        // 合约的usdt余额 = 10000 + 100 -12 - 60 
+        assert.equal(new BigNumber(10028).multipliedBy(decimal).toString(10), new BigNumber(await usdtInstance.balanceOf(mineInstance.address)).toString(10));
+    });
+
+    it('claim => success', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        let usdtInstance = await UsdtToken.new({ from: accounts[1] });
+
+        await mineInstance.setWriteAddress(accounts[1], { from: accounts[1] });
+        await mineInstance.setToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setDeferToken(usdtInstance.address, { from: accounts[1] });
+
+        let amountCompInstance = await AmountCompContract.new({ from: accounts[1] });
+        await amountCompInstance.setStableToken(TOKEN_USDT, true, { from: accounts[1] });
+        await mineInstance.setAmountCompContract(amountCompInstance.address, { from: accounts[1] });
+
+        let decimal = new BigNumber(10).pow(18);
+
+        // 转合约 - 10000
+        await usdtInstance.transfer(mineInstance.address, new BigNumber(10000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+
+        // 转A2 - 2000
+        await usdtInstance.transfer(accounts[2], new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[2] });
+
+        // 转A3 - 2000
+        await usdtInstance.transfer(accounts[3], new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        await usdtInstance.approve(mineInstance.address, new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[3] });
+
+        // 转A4 - 2000
+        await usdtInstance.transfer(accounts[4], new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[1] });
+        let r = await usdtInstance.approve(mineInstance.address, new BigNumber(2000).multipliedBy(decimal).toString(10), { from: accounts[4] });
+
+        // 设置开始区块
+        await mineInstance.setStartBlock(r.receipt.blockNumber + 1, r.receipt.blockNumber + 100, { from: accounts[1] });
+
+        // ---- A2 ----
+        // 抵押500
+        await mineInstance.deposit(new BigNumber(500).multipliedBy(decimal).toString(10), { from: accounts[2] });
+        // 成交额12000
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(12000).multipliedBy(decimal).toString(10), accounts[2], { from: accounts[1] });
+        // 分数
+        let a2Score = (new BigNumber(await mineInstance.addressScore(accounts[2]))).toString(10);
+
+        // ---- A3 ----
+        // 抵押900
+        await mineInstance.deposit(new BigNumber(900).multipliedBy(decimal).toString(10), { from: accounts[3] });
+        // 成交额1500
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(1500).multipliedBy(decimal).toString(10), accounts[3], { from: accounts[1] });
+        // 分数
+        let a3Score = (new BigNumber(await mineInstance.addressScore(accounts[3]))).toString(10);
+
+        // ---- A4 ----
+        // 抵押1234
+        await mineInstance.deposit(new BigNumber(1234).multipliedBy(decimal).toString(10), { from: accounts[4] });
+        // 成交额123456
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(123456).multipliedBy(decimal).toString(10), accounts[4], { from: accounts[1] });
+        // 分数
+        let a4Score = (new BigNumber(await mineInstance.addressScore(accounts[4]))).toString(10);
+
+        // ---- A5 ----
+        // 成交额200000
+        await mineInstance.notify(TOKEN_USDT, new BigNumber(200000).multipliedBy(decimal).toString(10), accounts[5], { from: accounts[1] });
+        // 分数
+        let a5Score = (new BigNumber(await mineInstance.addressScore(accounts[5]))).toString(10);
+
+        await mineInstance.claim({ from: accounts[2] });
+        // 积分为0
+        assert.equal(0, await mineInstance.addressScore(accounts[2]));
+        // 交易额为0
+        assert.equal(0, await mineInstance.addressVolume(accounts[2]));
+        // 奖励为0
+        assert.equal(0, await mineInstance.claimReward(accounts[2]));
+
+        await mineInstance.claim({ from: accounts[3] });
+        assert.equal(0, await mineInstance.addressScore(accounts[3]));
+        // 交易额为0
+        assert.equal(0, await mineInstance.addressVolume(accounts[3]));
+
+        await mineInstance.claim({ from: accounts[4] });
+        assert.equal(0, await mineInstance.addressScore(accounts[4]));
+        // 交易额为0
+        assert.equal(0, await mineInstance.addressVolume(accounts[4]));
+
+        await mineInstance.claim({ from: accounts[5] });
+        assert.equal(0, await mineInstance.addressScore(accounts[5]));
+        // 交易额为0
+        assert.equal(0, await mineInstance.addressVolume(accounts[5]));
+
+        // 积分全部清零[所有人都离场了]
+        assert.equal(0, await mineInstance.scoreTotal());
+        // 奖金池已全部发放
+        assert.equal(0, await mineInstance.deferTotal());
+
+        // 合约余额 = 10000 + 500 + 900 + 1234 - 11个块x20 = 12414
+        assert.equal(new BigNumber(12414).multipliedBy(decimal).toString(10), new BigNumber(await usdtInstance.balanceOf(mineInstance.address)).toString(10));
+    });
+
+    it('claim => zero', async () => {
+        let mineInstance = await Mine.new({ from: accounts[1] });
+        await mineInstance.claim({ from: accounts[2] });
+    })
+});
